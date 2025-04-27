@@ -157,7 +157,8 @@ if st.session_state.authenticated:
     st.bar_chart(age_group_spending.set_index('AGE_RANGE')['SPEND'])
     fig = px.pie(age_group_spending, values='SPEND', names='AGE_RANGE', title='Spending Distribution by Age Group')
     st.plotly_chart(fig)
-        st.header("🔎 Search Transactions by Household Number")
+    
+    st.header("🔎 Search Transactions by Household Number")
 
     def fetch_data_by_hshd(hshd_num):
         server = 'newretailserver123.database.windows.net'
