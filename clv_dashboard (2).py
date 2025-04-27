@@ -338,47 +338,7 @@ if st.session_state.authenticated:
         mime='text/csv',
     )
 
-    # Feature importance
-    importances = pd.Series(rf.feature_importances_, index=X_basket.columns)
-    top_features = importances.sort_values(ascending=False).head(10)
-    st.write("**Top Drivers of Basket Spend:**")
-    st.bar_chart(top_features)
-st.title("Data Loader: Upload Datasets")
 
-# --- File Uploaders ---
-uploaded_transactions = st.file_uploader("Upload Transactions Dataset", type="csv")
-uploaded_households = st.file_uploader("Upload Households Dataset", type="csv")
-uploaded_products = st.file_uploader("Upload Products Dataset", type="csv")
-
-# --- Handle Uploads and Session State ---
-if uploaded_transactions is not None:
-    st.session_state['transactions_df'] = pd.read_csv(uploaded_transactions)
-if uploaded_households is not None:
-    st.session_state['households_df'] = pd.read_csv(uploaded_households)
-if uploaded_products is not None:
-    st.session_state['products_df'] = pd.read_csv(uploaded_products)
-
-# --- Show Data Previews if Available ---
-if 'transactions_df' in st.session_state:
-    st.write("Transactions Data", st.session_state['transactions_df'].head())
-if 'households_df' in st.session_state:
-    st.write("Households Data", st.session_state['households_df'].head())
-if 'products_df' in st.session_state:
-    st.write("Products Data", st.session_state['products_df'].head())
-
-# --- Load from Database if Needed ---
-if (('transactions_df' not in st.session_state) or
-    ('households_df' not in st.session_state) or
-    ('products_df' not in st.session_state)):
-    if st.button("Load Latest Data from Database"):
-        tdf, hdf, pdf = load_data_from_db()
-        st.session_state['transactions_df'] = tdf
-        st.session_state['households_df'] = hdf
-        st.session_state['products_df'] = pdf
-        st.success("Loaded latest data from database.")
-        st.write("Transactions Data", tdf.head())
-        st.write("Households Data", hdf.head())
-        st.write("Products Data", pdf.head())
 
 
 # Streamlit UI components
