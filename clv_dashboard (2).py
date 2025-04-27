@@ -157,8 +157,61 @@ if st.session_state.authenticated:
     st.bar_chart(age_group_spending.set_index('AGE_RANGE')['SPEND'])
     fig = px.pie(age_group_spending, values='SPEND', names='AGE_RANGE', title='Spending Distribution by Age Group')
     st.plotly_chart(fig)
+        st.header("🔎 Search Transactions by Household Number")
 
-    import streamlit as st
+    def fetch_data_by_hshd(hshd_num):
+        server = 'newretailserver123.database.windows.net'
+        database = 'RetailDB'
+        username = 'azureuser'
+        password = 'YourStrongP@ssw0rd'
+        driver = '{ODBC Driver 17 for SQL Server}'
+        conn_str = (
+            f'DRIVER={driver};'
+            f'SERVER={server};'
+            f'DATABASE={database};'
+            f'UID={username};'
+            f'PWD={password};'
+            'Encrypt=yes;TrustServerCertificate=yes;Connection Timeout=30;'
+        )
+        conn = pyodbc.connect(conn_str)
+        query = """
+        SELECT 
+            H.HSHD_NUM, 
+            T.BASKET_NUM, 
+            T.PURCHASE_ AS Date,  
+            P.PRODUCT_NUM, 
+            P.DEPARTMENT, 
+            P.COMMODITY 
+        FROM dbo.households H
+        JOIN dbo.transactions T ON H.HSHD_NUM = T.HSHD_NUM
+        LEFT JOIN dbo.products P ON T.PRODUCT_NUM = P.PRODUCT_NUM
+        WHERE H.HSHD_NUM = ?
+        ORDER BY H.HSHD_NUM, T.BASKET_NUM, T.PURCHASE_, P.PRODUCT_NUM, P.DEPARTMENT, P.COMMODITY;
+        """
+        df = pd.read_sql(query, conn, params=[hshd_num])
+        conn.close()
+        return df
+
+    hshd_num_input = st.text_input("Enter Household Number (HSHD_NUM) to search:")
+
+    if hshd_num_input:
+        try:
+            hshd_num_value = int(hshd_num_input)
+            with st.spinner('Fetching data...'):
+                search_result = fetch_data_by_hshd(hshd_num_value)
+
+            if not search_result.empty:
+                st.success(f"Found {len(search_result)} records for HSHD_NUM {hshd_num_value}")
+                st.dataframe(search_result)
+            else:
+                st.warning("No data found for the entered Household Number.")
+
+        except ValueError:
+            st.error("Please enter a valid numeric Household Number (HSHD_NUM).")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+
+import streamlit as st
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
