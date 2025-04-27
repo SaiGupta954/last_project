@@ -65,7 +65,7 @@ if st.session_state.authenticated:
         database = 'RetailDB'
         username = 'azureuser'
         password = 'YourStrongP@ssw0rd'
-        driver = '{ODBC Driver 18 for SQL Server}'
+        driver = '{ODBC Driver 17 for SQL Server}'
         conn_str = (
             f'DRIVER={driver};'
             f'SERVER={server};'
