@@ -80,10 +80,7 @@ if st.session_state.authenticated:
         ('households_df' not in st.session_state) or
         ('products_df' not in st.session_state)):
         if st.button("📥 Load Latest Data from Database"):
-            tdf, hdf, pdf = load_data_from_db()
-            st.session_state['transactions_df'] = tdf
-            st.session_state['households_df'] = hdf
-            st.session_state['products_df'] = pdf
+            
             st.success("Loaded data successfully from Database.")
 if st.session_state.authenticated:
     st.title("📊 Retail Customer Analytics Dashboard")
