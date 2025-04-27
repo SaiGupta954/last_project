@@ -55,7 +55,36 @@ def login_signup():
                     st.sidebar.error("Invalid credentials")
 
 login_signup()
+if st.session_state.authenticated:
+    st.title("📂 Dataset Loader")
 
+    uploaded_transactions = st.file_uploader("Upload Transactions Dataset (CSV)", type="csv")
+    uploaded_households = st.file_uploader("Upload Households Dataset (CSV)", type="csv")
+    uploaded_products = st.file_uploader("Upload Products Dataset (CSV)", type="csv")
+
+    if uploaded_transactions is not None:
+        st.session_state['transactions_df'] = pd.read_csv(uploaded_transactions)
+    if uploaded_households is not None:
+        st.session_state['households_df'] = pd.read_csv(uploaded_households)
+    if uploaded_products is not None:
+        st.session_state['products_df'] = pd.read_csv(uploaded_products)
+
+    if 'transactions_df' in st.session_state:
+        st.write("Sample Transactions Data", st.session_state['transactions_df'].head())
+    if 'households_df' in st.session_state:
+        st.write("Sample Households Data", st.session_state['households_df'].head())
+    if 'products_df' in st.session_state:
+        st.write("Sample Products Data", st.session_state['products_df'].head())
+
+    if (('transactions_df' not in st.session_state) or
+        ('households_df' not in st.session_state) or
+        ('products_df' not in st.session_state)):
+        if st.button("📥 Load Latest Data from Database"):
+            tdf, hdf, pdf = load_data_from_db()
+            st.session_state['transactions_df'] = tdf
+            st.session_state['households_df'] = hdf
+            st.session_state['products_df'] = pdf
+            st.success("Loaded data successfully from Database.")
 if st.session_state.authenticated:
     st.title("📊 Retail Customer Analytics Dashboard")
 
