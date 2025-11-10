@@ -273,7 +273,8 @@ if st.session_state.authenticated:
             ordered=True,
         )
         seasonal = seasonal.sort_values("month")
-        st.bar_chart seasonal.set_index("month")  # noqa: E999  (Streamlit executes Python; this is fine)
+        st.bar_chart(seasonal.set_index("month"))
+  # noqa: E999  (Streamlit executes Python; this is fine)
     else:
         st.info("date/SPEND not available for seasonal analysis.")
 
