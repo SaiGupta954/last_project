@@ -4,28 +4,21 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
-import altair as alt
 import plotly.express as px
-import plotly.graph_objects as go
 
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, confusion_matrix
 
-# -------------------------------
-# Basic setup
-# -------------------------------
+
+# =========================
+# Basic App Setup
+# =========================
 st.set_page_config(page_title="🍭️ Retail Insights Dashboard", layout="wide")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
-# Simple (demo) password hashing for in-session users
-def make_hashes(password: str) -> str:
-    return hashlib.sha256(str.encode(password)).hexdigest()
-
-def check_hashes(password: str, hashed_text: str) -> bool:
-    return make_hashes(password) == hashed_text
-
+# Session boot
 if "user_db" not in st.session_state:
     st.session_state.user_db = {}
 if "authenticated" not in st.session_state:
@@ -33,14 +26,21 @@ if "authenticated" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = None
 
-# -------------------------------
-# Authentication
-# -------------------------------
+
+# =========================
+# Simple Demo Auth (in-memory)
+# =========================
+def make_hashes(password: str) -> str:
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
+def check_hashes(password: str, hashed_text: str) -> bool:
+    return make_hashes(password) == hashed_text
+
 def login_signup():
     if not st.session_state.authenticated:
         with st.sidebar:
-            auth_option = st.selectbox("Login or Signup", ["Login", "Signup"])
-            if auth_option == "Signup":
+            mode = st.selectbox("Login or Signup", ["Login", "Signup"])
+            if mode == "Signup":
                 st.subheader("Create Account")
                 new_user = st.text_input("Username")
                 new_email = st.text_input("Email")
@@ -57,8 +57,7 @@ def login_signup():
                             st.success("Signup successful. Please login.")
                     else:
                         st.error("Username and password cannot be empty.")
-
-            else:  # Login
+            else:
                 st.subheader("Login")
                 username = st.text_input("Username")
                 password = st.text_input("Password", type="password")
@@ -71,12 +70,15 @@ def login_signup():
                     else:
                         st.error("Invalid credentials")
 
+
 login_signup()
 
-# -------------------------------
-# Data loading (FREE: local files or uploads)
-# -------------------------------
+
+# =========================
+# Data Loading (FREE: local files or uploads)
+# =========================
 def read_any(path_parquet: str, path_csv: str) -> pd.DataFrame:
+    """Read Parquet if present, else CSV; return empty DataFrame if neither exists."""
     if os.path.exists(path_parquet):
         return pd.read_parquet(path_parquet)
     if os.path.exists(path_csv):
@@ -84,8 +86,8 @@ def read_any(path_parquet: str, path_csv: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 @st.cache_data(show_spinner="Loading data…", ttl=600)
-def load_local_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load Transactions, Households, Products from ./data (Parquet or CSV)."""
+def load_local_data():
+    """Load data from ./data (Parquet or CSV)."""
     df_transactions = read_any(
         os.path.join(DATA_DIR, "Transactions.parquet"),
         os.path.join(DATA_DIR, "Transactions.csv"),
@@ -105,36 +107,75 @@ def load_local_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     return df_transactions, df_households, df_products
 
+# ---- robust column normalization (prevents KeyErrors) ----
+def _norm(s: str) -> str:
+    return (
+        str(s)
+        .strip()
+        .lower()
+        .replace(" ", "")
+        .replace("_", "")
+        .replace("-", "")
+    )
+
+def _rename_if_present(df: pd.DataFrame, target: str, candidates: list[str]) -> pd.DataFrame:
+    if df.empty:
+        return df
+    norm_cols = {_norm(c): c for c in df.columns}
+    for cand in candidates:
+        nc = _norm(cand)
+        if nc in norm_cols:
+            real_col = norm_cols[nc]
+            if real_col != target and target not in df.columns:
+                df.rename(columns={real_col: target}, inplace=True)
+            break
+    return df
+
 def normalize_columns(df_transactions, df_households, df_products):
-    # Standardize key column names to your later usage
-    if not df_transactions.empty:
-        df_transactions.rename(
-            columns={"HSHD_NUM": "hshd_num", "PRODUCT_NUM": "product_num"},
-            inplace=True,
-            errors="ignore",
-        )
-    if not df_households.empty:
-        df_households.rename(
-            columns={"HSHD_NUM": "hshd_num"},
-            inplace=True,
-            errors="ignore",
-        )
-    if not df_products.empty:
-        df_products.rename(
-            columns={"PRODUCT_NUM": "product_num"},
-            inplace=True,
-            errors="ignore",
-        )
+    # common variants that might appear in files
+    hshd_candidates = [
+        "hshd_num", "HSHD_NUM", "hshd", "household", "household_num",
+        "householdnumber", "hshdnumber", "householdid", "hshdid"
+    ]
+    prod_candidates = [
+        "product_num", "PRODUCT_NUM", "product", "productnumber",
+        "prod_num", "prodid", "productid"
+    ]
+
+    # transactions
+    df_transactions = _rename_if_present(df_transactions, "hshd_num", hshd_candidates)
+    df_transactions = _rename_if_present(df_transactions, "product_num", prod_candidates)
+
+    # households
+    df_households = _rename_if_present(df_households, "hshd_num", hshd_candidates)
+
+    # products
+    df_products = _rename_if_present(df_products, "product_num", prod_candidates)
+
     return df_transactions, df_households, df_products
 
 def build_full_df(df_transactions, df_households, df_products):
-    full = df_transactions.merge(df_households, on="hshd_num", how="left") if not df_transactions.empty and not df_households.empty else df_transactions.copy()
-    full = full.merge(df_products, on="product_num", how="left") if not full.empty and not df_products.empty else full
+    """Merge safely only if join keys exist on both sides."""
+    full = df_transactions.copy()
+
+    if not full.empty and not df_households.empty:
+        if "hshd_num" in full.columns and "hshd_num" in df_households.columns:
+            full = full.merge(df_households, on="hshd_num", how="left")
+        else:
+            st.warning("Household key 'hshd_num' missing in one of the tables; skipping households merge.")
+
+    if not full.empty and not df_products.empty:
+        if "product_num" in full.columns and "product_num" in df_products.columns:
+            full = full.merge(df_products, on="product_num", how="left")
+        else:
+            st.warning("Product key 'product_num' missing in one of the tables; skipping products merge.")
+
     return full
 
-# -------------------------------
-# Main app (only for authenticated users)
-# -------------------------------
+
+# =========================
+# Main (only for authenticated users)
+# =========================
 if st.session_state.authenticated:
     st.title("📂 Dataset Loader")
 
@@ -143,10 +184,10 @@ if st.session_state.authenticated:
     uploaded_households = st.file_uploader("Upload Households (CSV)", type="csv")
     uploaded_products = st.file_uploader("Upload Products (CSV)", type="csv")
 
-    # Load local data first
+    # Load from repo first
     df_transactions, df_households, df_products = load_local_data()
 
-    # If user uploads CSVs, prefer them
+    # Override with uploads if provided
     if uploaded_transactions is not None:
         df_transactions = pd.read_csv(uploaded_transactions)
     if uploaded_households is not None:
@@ -154,7 +195,7 @@ if st.session_state.authenticated:
     if uploaded_products is not None:
         df_products = pd.read_csv(uploaded_products)
 
-    # Fallback button (kept for UX): just reload local files
+    # Button to reload repo files (UX nicety)
     if st.button("📥 Load Latest Data from Repository"):
         df_transactions, df_households, df_products = load_local_data()
         st.success("Loaded data from local repository files.")
@@ -176,13 +217,10 @@ if st.session_state.authenticated:
 
     # Guard if data missing
     if df_transactions.empty or df_households.empty or df_products.empty:
-        st.warning("Please ensure all three datasets (Transactions, Households, Products) are available (in /data or via upload).")
+        st.warning("Please ensure all three datasets (Transactions, Households, Products) exist (in /data or via upload).")
         st.stop()
 
-    # Merge & derive date fields
-    full_df = build_full_df(df_transactions, df_households, df_products)
-
-    # Build date from YEAR + WEEK_NUM if available
+    # Derive a date column
     if {"YEAR", "WEEK_NUM"}.issubset(df_transactions.columns):
         try:
             df_transactions["date"] = pd.to_datetime(
@@ -197,18 +235,24 @@ if st.session_state.authenticated:
     else:
         df_transactions["date"] = pd.NaT
 
-    # -------------------------------
+    # Build merged frame
+    full_df = build_full_df(df_transactions, df_households, df_products)
+
+    # =========================
     # Dashboard
-    # -------------------------------
+    # =========================
     st.title("📊 Retail Customer Analytics Dashboard")
 
     # 1) Customer Engagement Over Time
     st.header("📈 Customer Engagement Over Time")
     if "SPEND" in df_transactions.columns:
         temp = df_transactions.dropna(subset=["date"]).copy()
-        weekly = temp.groupby(temp["date"].dt.to_period("W"))["SPEND"].sum().reset_index()
-        weekly["ds"] = weekly["date"].dt.start_time
-        st.line_chart(weekly.set_index("ds")["SPEND"])
+        if not temp.empty:
+            weekly = temp.groupby(temp["date"].dt.to_period("W"))["SPEND"].sum().reset_index()
+            weekly["ds"] = weekly["date"].dt.start_time
+            st.line_chart(weekly.set_index("ds")["SPEND"])
+        else:
+            st.info("No valid dates found to plot engagement over time.")
     else:
         st.info("SPEND column not found in transactions.")
 
@@ -225,11 +269,11 @@ if st.session_state.authenticated:
     # 3) Customer Segmentation
     st.header("🔍 Customer Segmentation")
     if "SPEND" in full_df.columns and "hshd_num" in full_df.columns:
-        seg = full_df.groupby(["hshd_num"]).agg(
-            SPEND=("SPEND", "sum"),
-            INCOME_RANGE=("INCOME_RANGE", "first") if "INCOME_RANGE" in full_df.columns else ("hshd_num", "size"),
-            AGE_RANGE=("AGE_RANGE", "first") if "AGE_RANGE" in full_df.columns else ("hshd_num", "size"),
-        )
+        seg = full_df.groupby("hshd_num").agg(SPEND=("SPEND", "sum"))
+        if "INCOME_RANGE" in full_df.columns:
+            seg["INCOME_RANGE"] = full_df.groupby("hshd_num")["INCOME_RANGE"].first()
+        if "AGE_RANGE" in full_df.columns:
+            seg["AGE_RANGE"] = full_df.groupby("hshd_num")["AGE_RANGE"].first()
         st.dataframe(seg.sort_values(by="SPEND", ascending=False).head(10))
     else:
         st.info("Required columns missing for segmentation.")
@@ -262,19 +306,21 @@ if st.session_state.authenticated:
     st.header("📆 Seasonal Spending Patterns")
     if "date" in df_transactions.columns and "SPEND" in df_transactions.columns:
         temp = df_transactions.dropna(subset=["date"]).copy()
-        temp["month"] = temp["date"].dt.month_name()
-        seasonal = temp.groupby("month")["SPEND"].sum().reset_index()
-        seasonal["month"] = pd.Categorical(
-            seasonal["month"],
-            categories=[
-                "January","February","March","April","May","June",
-                "July","August","September","October","November","December"
-            ],
-            ordered=True,
-        )
-        seasonal = seasonal.sort_values("month")
-        st.bar_chart(seasonal.set_index("month"))
-  # noqa: E999  (Streamlit executes Python; this is fine)
+        if not temp.empty:
+            temp["month"] = temp["date"].dt.month_name()
+            seasonal = temp.groupby("month")["SPEND"].sum().reset_index()
+            seasonal["month"] = pd.Categorical(
+                seasonal["month"],
+                categories=[
+                    "January","February","March","April","May","June",
+                    "July","August","September","October","November","December"
+                ],
+                ordered=True,
+            )
+            seasonal = seasonal.sort_values("month")
+            st.bar_chart(seasonal.set_index("month"))
+        else:
+            st.info("No valid dates to compute seasonal patterns.")
     else:
         st.info("date/SPEND not available for seasonal analysis.")
 
@@ -308,36 +354,43 @@ if st.session_state.authenticated:
         fig = px.pie(age_group_spending, values="SPEND", names="AGE_RANGE", title="Spending Distribution by Age Group")
         st.plotly_chart(fig)
 
-    # 11) Search Transactions by Household Number (no DB)
+    # 11) Search Transactions by Household Number (in-memory search)
     st.header("🔎 Search Transactions by Household Number")
     hshd_num_input = st.text_input("Enter Household Number (HSHD_NUM) to search:")
     if hshd_num_input:
         try:
             hval = int(hshd_num_input)
-            # filter in-memory
-            cols = ["HSHD_NUM", "hshd_num"]
-            key = "hshd_num" if "hshd_num" in df_transactions.columns else "HSHD_NUM"
-            subset_cols = ["BASKET_NUM", "date", "product_num"]
-            out = df_transactions[df_transactions[key] == hval].copy()
-            if not out.empty and not df_products.empty:
-                out = out.merge(df_products[["product_num","DEPARTMENT","COMMODITY"]], on="product_num", how="left")
-            if not out.empty:
-                st.success(f"Found {len(out)} records for HSHD_NUM {hval}")
-                st.dataframe(out.sort_values(by=["BASKET_NUM","date","product_num"]))
+            key = "hshd_num" if "hshd_num" in df_transactions.columns else None
+            if key is None:
+                st.error("No household key found in transactions (expected 'hshd_num').")
             else:
-                st.warning("No data found for the entered Household Number.")
+                out = df_transactions[df_transactions[key] == hval].copy()
+                if not out.empty and not df_products.empty:
+                    # Attach product info if present
+                    attach_cols = [c for c in ["product_num", "DEPARTMENT", "COMMODITY"] if c in df_products.columns or c == "product_num"]
+                    out = out.merge(df_products[[c for c in attach_cols if c in df_products.columns]],
+                                    on="product_num", how="left")
+                if not out.empty:
+                    sort_cols = [c for c in ["BASKET_NUM", "date", "product_num"] if c in out.columns]
+                    if sort_cols:
+                        out = out.sort_values(by=sort_cols)
+                    st.success(f"Found {len(out)} records for HSHD_NUM {hval}")
+                    st.dataframe(out)
+                else:
+                    st.warning("No data found for the entered Household Number.")
         except ValueError:
             st.error("Please enter a valid numeric Household Number (HSHD_NUM).")
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
 
-    # -------------------------------
+    # =========================
     # ML Tabs
-    # -------------------------------
+    # =========================
     tab1, tab2 = st.tabs(["⚠️ Churn Prediction", "🧺 Basket Spend Regression"])
 
     with tab1:
         st.header("Churn Prediction: Customer Engagement Over Time")
+
         # Filters
         dept_opts = ["All"] + (sorted(df_products["DEPARTMENT"].dropna().unique()) if "DEPARTMENT" in df_products.columns else [])
         comm_opts = ["All"] + (sorted(df_products["COMMODITY"].dropna().unique()) if "COMMODITY" in df_products.columns else [])
@@ -370,44 +423,47 @@ if st.session_state.authenticated:
                 st.warning("No data found for selected filters.")
 
         st.subheader("ML Churn Prediction: At-Risk Customers")
-        if "date" in df_transactions.columns and "SPEND" in df_transactions.columns and "BASKET_NUM" in df_transactions.columns:
+        if "date" in df_transactions.columns and "SPEND" in df_transactions.columns and "BASKET_NUM" in df_transactions.columns and "hshd_num" in df_transactions.columns:
             tmp = df_transactions.dropna(subset=["date"]).copy()
-            now = tmp["date"].max()
-            rfm = tmp.groupby("hshd_num").agg(
-                recency=("date", lambda x: (now - x.max()).days),
-                frequency=("BASKET_NUM", "nunique"),
-                monetary=("SPEND", "sum"),
-            )
-            # Label churn if inactive > 12 weeks (~84 days)
-            rfm["churn"] = (rfm["recency"] > 84).astype(int)
+            if not tmp.empty:
+                now = tmp["date"].max()
+                rfm = tmp.groupby("hshd_num").agg(
+                    recency=("date", lambda x: (now - x.max()).days),
+                    frequency=("BASKET_NUM", "nunique"),
+                    monetary=("SPEND", "sum"),
+                )
+                # Label churn if inactive > 12 weeks (~84 days)
+                rfm["churn"] = (rfm["recency"] > 84).astype(int)
 
-            X = rfm[["recency", "frequency", "monetary"]]
-            y = rfm["churn"]
+                X = rfm[["recency", "frequency", "monetary"]]
+                y = rfm["churn"]
 
-            X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
-            clf = RandomForestClassifier(n_estimators=100, random_state=42)
-            clf.fit(X_train, y_train)
-            y_pred = clf.predict(X_test)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+                clf = RandomForestClassifier(n_estimators=100, random_state=42)
+                clf.fit(X_train, y_train)
+                y_pred = clf.predict(X_test)
 
-            st.write("**Classification Report:**")
-            st.text(classification_report(y_test, y_pred))
+                st.write("**Classification Report:**")
+                st.text(classification_report(y_test, y_pred))
 
-            st.write("**Confusion Matrix:**")
-            st.dataframe(pd.DataFrame(
-                confusion_matrix(y_test, y_pred),
-                columns=["Predicted Not Churn", "Predicted Churn"],
-                index=["Actual Not Churn", "Actual Churn"],
-            ))
+                st.write("**Confusion Matrix:**")
+                st.dataframe(pd.DataFrame(
+                    confusion_matrix(y_test, y_pred),
+                    columns=["Predicted Not Churn", "Predicted Churn"],
+                    index=["Actual Not Churn", "Actual Churn"],
+                ))
 
-            feat_imp = pd.Series(clf.feature_importances_, index=["Recency", "Frequency", "Monetary"])
-            st.write("**Feature Importances:**")
-            st.bar_chart(feat_imp)
+                feat_imp = pd.Series(clf.feature_importances_, index=["Recency", "Frequency", "Monetary"])
+                st.write("**Feature Importances:**")
+                st.bar_chart(feat_imp)
+            else:
+                st.info("No valid dates to compute churn ML.")
         else:
-            st.info("Need date, SPEND, and BASKET_NUM columns for churn ML.")
+            st.info("Need columns: date, SPEND, BASKET_NUM, hshd_num for churn ML.")
 
     with tab2:
         st.header("Basket Analysis - Predicting Total Spend")
-        if {"BASKET_NUM", "SPEND"}.issubset(df_transactions.columns):
+        if {"BASKET_NUM", "SPEND", "product_num"}.issubset(df_transactions.columns):
             basket_merged = df_transactions.merge(df_products, on="product_num", how="left")
             use_cols = [c for c in ["DEPARTMENT", "COMMODITY", "BRAND_TY", "NATURAL_ORGANIC_FLAG"] if c in basket_merged.columns]
             if not use_cols:
@@ -441,5 +497,4 @@ if st.session_state.authenticated:
                     mime="text/csv",
                 )
         else:
-            st.info("BASKET_NUM and SPEND are required for basket regression.")
-
+            st.info("BASKET_NUM, product_num, and SPEND are required for basket regression.")
