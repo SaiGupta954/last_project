@@ -1,6 +1,10 @@
+# =========================
+# Retail Insights Dashboard 
+# =========================
 import os
 import hashlib
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -17,6 +21,7 @@ from sklearn.metrics import mean_squared_error, r2_score, classification_report,
 st.set_page_config(page_title="🍭️ Retail Insights Dashboard", layout="wide")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+ASSETS_DIR = Path(__file__).parent / "assets"
 
 # Session boot
 if "user_db" not in st.session_state:
@@ -28,7 +33,7 @@ if "username" not in st.session_state:
 
 
 # =========================
-# Simple Demo Auth (in-memory)
+# Auth helpers
 # =========================
 def make_hashes(password: str) -> str:
     return hashlib.sha256(str.encode(password)).hexdigest()
@@ -36,42 +41,54 @@ def make_hashes(password: str) -> str:
 def check_hashes(password: str, hashed_text: str) -> bool:
     return make_hashes(password) == hashed_text
 
-def login_signup():
-    if not st.session_state.authenticated:
-        with st.sidebar:
-            mode = st.selectbox("Login or Signup", ["Login", "Signup"])
-            if mode == "Signup":
-                st.subheader("Create Account")
-                new_user = st.text_input("Username")
-                new_email = st.text_input("Email")
-                new_password = st.text_input("Password", type="password")
-                if st.button("Signup"):
-                    if new_user and new_password:
-                        if new_user in st.session_state.user_db:
-                            st.error("Username already exists.")
-                        else:
-                            st.session_state.user_db[new_user] = {
-                                "email": new_email,
-                                "password": make_hashes(new_password),
-                            }
-                            st.success("Signup successful. Please login.")
-                    else:
-                        st.error("Username and password cannot be empty.")
+def login_signup_inline():
+    """
+    Inline (non-sidebar) login/signup box that uses st.session_state.user_db.
+    Sets st.session_state.authenticated and st.session_state.username when login succeeds.
+    """
+    tab_login, tab_signup = st.tabs(["🔐 Login", "🆕 Signup"])
+
+    with tab_signup:
+        st.subheader("Create Account")
+        new_user = st.text_input("Username", key="signup_user")
+        new_email = st.text_input("Email", key="signup_email")
+        new_password = st.text_input("Password", type="password", key="signup_pass")
+        if st.button("Create account", key="signup_btn"):
+            if new_user and new_password:
+                if new_user in st.session_state.user_db:
+                    st.error("Username already exists.")
+                else:
+                    st.session_state.user_db[new_user] = {
+                        "email": new_email,
+                        "password": make_hashes(new_password),
+                    }
+                    st.success("Signup successful. Please switch to Login.")
             else:
-                st.subheader("Login")
-                username = st.text_input("Username")
-                password = st.text_input("Password", type="password")
-                if st.button("Login"):
-                    user = st.session_state.user_db.get(username)
-                    if user and check_hashes(password, user["password"]):
-                        st.session_state.authenticated = True
-                        st.session_state.username = username
-                        st.rerun()
-                    else:
-                        st.error("Invalid credentials")
+                st.error("Username and password cannot be empty.")
 
-
-login_signup()
+    with tab_login:
+        st.subheader("Welcome back")
+        username = st.text_input("Username", key="login_user")
+        password = st.text_input("Password", type="password", key="login_pass")
+        col_a, col_b = st.columns([1,1])
+        with col_a:
+            if st.button("Login", key="login_btn", use_container_width=True):
+                user = st.session_state.user_db.get(username)
+                if user and check_hashes(password, user["password"]):
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
+        with col_b:
+            if st.button("Login as Demo", key="demo_btn", use_container_width=True):
+                # Create a demo user on the fly
+                demo_user = "demo_user"
+                demo_pw_h = make_hashes("demo_pass")
+                st.session_state.user_db.setdefault(demo_user, {"email": "demo@example.com", "password": demo_pw_h})
+                st.session_state.authenticated = True
+                st.session_state.username = demo_user
+                st.rerun()
 
 
 # =========================
@@ -171,6 +188,59 @@ def build_full_df(df_transactions, df_households, df_products):
             st.warning("Product key 'product_num' missing in one of the tables; skipping products merge.")
 
     return full
+
+
+# =========================
+# HERO + LOGIN (always visible on app start)
+# =========================
+st.markdown("""
+<style>
+.block-container { padding-top: 0.8rem; }
+.hero-card, .login-card {
+  background: #0f1a42;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25);
+}
+.login-card { padding: 20px 18px; }
+.hero-card { position: relative; overflow: hidden; }
+.hero-header {
+  background: linear-gradient(135deg, #0b5fff 0%, #0a2a6a 100%);
+  color: #fff; padding: 14px 16px; font-weight: 800; font-size: 18px;
+}
+.hero-body { padding: 10px; background:#0b1437; }
+.hero-body img { width: 100%; border-radius: 12px; display:block; }
+.badge-live {
+  position:absolute; top:14px; right:14px; background:#ff2d55;
+  color:#fff; font-weight:700; font-size:12px; padding:6px 10px; border-radius:999px;
+  letter-spacing:.3px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+left, right = st.columns([1, 2], vertical_alignment="center")
+
+# LEFT: Login/Signup panel (inline)
+with left:
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    st.subheader("🔐 Login to Continue")
+    login_signup_inline()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# RIGHT: Hero animated dashboard image (LIVE)
+with right:
+    hero_path = ASSETS_DIR / "hero_dashboard.gif"
+    st.markdown('<div class="hero-card">', unsafe_allow_html=True)
+    st.markdown('<div class="hero-header">Retail Intelligence Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="badge-live">LIVE</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-body">', unsafe_allow_html=True)
+    if hero_path.exists():
+        # Optional: subtle refresh so GIF feels alive if replaced server-side
+        st.markdown("<meta http-equiv='refresh' content='12'>", unsafe_allow_html=True)
+        st.image(str(hero_path), use_container_width=True)
+    else:
+        st.info("Upload an animated image to assets/hero_dashboard.gif")
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
 
 # =========================
