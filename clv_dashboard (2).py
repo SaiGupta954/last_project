@@ -1,6 +1,3 @@
-# =========================
-# Retail Insights Dashboard 
-# =========================
 import os
 import hashlib
 from datetime import datetime
@@ -9,21 +6,114 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-
+import plotly.io as pio
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, confusion_matrix
 
 
 # =========================
-# Basic App Setup
+# Global Theme Setup
 # =========================
-st.set_page_config(page_title="🍭️ Retail Insights Dashboard", layout="wide")
+st.set_page_config(page_title="🌈 Retail Insights Dashboard", layout="wide")
+pio.templates.default = "plotly_dark"
+px.defaults.color_discrete_sequence = [
+    "#7C3AED", "#06B6D4", "#22C55E", "#F59E0B", "#EC4899", "#10B981", "#60A5FA"
+]
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 ASSETS_DIR = Path(__file__).parent / "assets"
 
-# Session boot
+# =========================
+# Custom Colorful Style
+# =========================
+st.markdown("""
+<style>
+:root{
+  --accent:#7C3AED;
+  --accent2:#06B6D4;
+  --accent3:#22C55E;
+  --bg1:#0b1026;
+  --card:#0f1a42;
+  --border: rgba(255,255,255,.10);
+}
+
+/* colorful background */
+html, body, .stApp {
+  background: radial-gradient(1200px 700px at 85% -10%, #0b5fff33, transparent 60%),
+              radial-gradient(1000px 600px at -10% 80%, #22c55e22, transparent 60%),
+              linear-gradient(160deg, #0b1026 0%, #0b1437 45%, #0a1a44 100%) !important;
+}
+
+.block-container { padding-top: 1.1rem; }
+
+/* cards */
+.hero-card, .login-card {
+  background: linear-gradient(180deg, rgba(15,26,66,.92), rgba(15,20,55,.92));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.35);
+}
+
+.login-card { padding: 22px 18px; }
+.hero-card { position: relative; overflow: hidden; }
+
+/* hero */
+.hero-header {
+  background: linear-gradient(90deg, var(--accent) 0%, #4F46E5 35%, var(--accent2) 100%);
+  color: #fff; padding: 14px 16px; font-weight: 800; font-size: 18px;
+}
+.hero-body { padding: 12px; background: transparent; }
+.hero-body .stImage img{
+  width:100%; border-radius:14px; display:block;
+  filter: brightness(1.3) saturate(1.25) contrast(1.06);
+  box-shadow: 0 18px 50px rgba(0,0,0,.35);
+}
+.badge-live {
+  position:absolute; top:14px; right:14px;
+  background: linear-gradient(90deg, #fb7185, #ef4444);
+  color:#fff; font-weight:800; font-size:12px;
+  padding:6px 10px; border-radius:999px;
+  box-shadow: 0 6px 18px rgba(239,68,68,.45);
+}
+
+/* tabs */
+.stTabs [data-baseweb="tab"]{
+  color:#cbd5e1; font-weight:700; border:none; background:transparent;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"]{
+  color:#fff;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+  border-radius:999px;
+}
+
+/* inputs */
+input, textarea, .stTextInput>div>div>input{
+  background:#0b1430 !important; color:#e5e7eb !important;
+  border:1px solid var(--border) !important;
+}
+.stSelectbox, .stTextInput, .stFileUploader{
+  filter: drop-shadow(0 10px 24px rgba(0,0,0,.25));
+}
+
+/* buttons */
+.stButton>button{
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+  border:none; color:#fff; font-weight:800;
+  padding:.6rem 1rem; border-radius:12px;
+  box-shadow: 0 12px 30px rgba(124,58,237,.35);
+}
+.stButton>button:hover{ transform: translateY(-1px); opacity:.95; }
+
+/* headings */
+h1, h2, h3 { color:#fff; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# =========================
+# Auth Helpers
+# =========================
 if "user_db" not in st.session_state:
     st.session_state.user_db = {}
 if "authenticated" not in st.session_state:
@@ -31,10 +121,6 @@ if "authenticated" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = None
 
-
-# =========================
-# Auth helpers
-# =========================
 def make_hashes(password: str) -> str:
     return hashlib.sha256(str.encode(password)).hexdigest()
 
@@ -42,18 +128,12 @@ def check_hashes(password: str, hashed_text: str) -> bool:
     return make_hashes(password) == hashed_text
 
 def login_signup_inline():
-    """
-    Inline (non-sidebar) login/signup box that uses st.session_state.user_db.
-    Sets st.session_state.authenticated and st.session_state.username when login succeeds.
-    """
     tab_login, tab_signup = st.tabs(["🔐 Login", "🆕 Signup"])
-
     with tab_signup:
-        st.subheader("Create Account")
         new_user = st.text_input("Username", key="signup_user")
         new_email = st.text_input("Email", key="signup_email")
         new_password = st.text_input("Password", type="password", key="signup_pass")
-        if st.button("Create account", key="signup_btn"):
+        if st.button("Create Account", key="signup_btn"):
             if new_user and new_password:
                 if new_user in st.session_state.user_db:
                     st.error("Username already exists.")
@@ -62,16 +142,12 @@ def login_signup_inline():
                         "email": new_email,
                         "password": make_hashes(new_password),
                     }
-                    st.success("Signup successful. Please switch to Login.")
-            else:
-                st.error("Username and password cannot be empty.")
-
+                    st.success("Signup successful. Please login.")
     with tab_login:
-        st.subheader("Welcome back")
         username = st.text_input("Username", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
-        col_a, col_b = st.columns([1,1])
-        with col_a:
+        c1, c2 = st.columns(2)
+        with c1:
             if st.button("Login", key="login_btn", use_container_width=True):
                 user = st.session_state.user_db.get(username)
                 if user and check_hashes(password, user["password"]):
@@ -80,9 +156,8 @@ def login_signup_inline():
                     st.rerun()
                 else:
                     st.error("Invalid credentials")
-        with col_b:
+        with c2:
             if st.button("Login as Demo", key="demo_btn", use_container_width=True):
-                # Create a demo user on the fly
                 demo_user = "demo_user"
                 demo_pw_h = make_hashes("demo_pass")
                 st.session_state.user_db.setdefault(demo_user, {"email": "demo@example.com", "password": demo_pw_h})
@@ -92,142 +167,20 @@ def login_signup_inline():
 
 
 # =========================
-# Data Loading (FREE: local files or uploads)
+# Hero Section
 # =========================
-def read_any(path_parquet: str, path_csv: str) -> pd.DataFrame:
-    """Read Parquet if present, else CSV; return empty DataFrame if neither exists."""
-    if os.path.exists(path_parquet):
-        return pd.read_parquet(path_parquet)
-    if os.path.exists(path_csv):
-        return pd.read_csv(path_csv)
-    return pd.DataFrame()
-
-@st.cache_data(show_spinner="Loading data…", ttl=600)
-def load_local_data():
-    """Load data from ./data (Parquet or CSV)."""
-    df_transactions = read_any(
-        os.path.join(DATA_DIR, "Transactions.parquet"),
-        os.path.join(DATA_DIR, "Transactions.csv"),
-    )
-    df_households = read_any(
-        os.path.join(DATA_DIR, "Households.parquet"),
-        os.path.join(DATA_DIR, "Households.csv"),
-    )
-    df_products = read_any(
-        os.path.join(DATA_DIR, "Products.parquet"),
-        os.path.join(DATA_DIR, "Products.csv"),
-    )
-
-    for df in (df_transactions, df_households, df_products):
-        if not df.empty:
-            df.columns = df.columns.str.strip()
-
-    return df_transactions, df_households, df_products
-
-# ---- robust column normalization (prevents KeyErrors) ----
-def _norm(s: str) -> str:
-    return (
-        str(s)
-        .strip()
-        .lower()
-        .replace(" ", "")
-        .replace("_", "")
-        .replace("-", "")
-    )
-
-def _rename_if_present(df: pd.DataFrame, target: str, candidates: list[str]) -> pd.DataFrame:
-    if df.empty:
-        return df
-    norm_cols = {_norm(c): c for c in df.columns}
-    for cand in candidates:
-        nc = _norm(cand)
-        if nc in norm_cols:
-            real_col = norm_cols[nc]
-            if real_col != target and target not in df.columns:
-                df.rename(columns={real_col: target}, inplace=True)
-            break
-    return df
-
-def normalize_columns(df_transactions, df_households, df_products):
-    # common variants that might appear in files
-    hshd_candidates = [
-        "hshd_num", "HSHD_NUM", "hshd", "household", "household_num",
-        "householdnumber", "hshdnumber", "householdid", "hshdid"
-    ]
-    prod_candidates = [
-        "product_num", "PRODUCT_NUM", "product", "productnumber",
-        "prod_num", "prodid", "productid"
-    ]
-
-    # transactions
-    df_transactions = _rename_if_present(df_transactions, "hshd_num", hshd_candidates)
-    df_transactions = _rename_if_present(df_transactions, "product_num", prod_candidates)
-
-    # households
-    df_households = _rename_if_present(df_households, "hshd_num", hshd_candidates)
-
-    # products
-    df_products = _rename_if_present(df_products, "product_num", prod_candidates)
-
-    return df_transactions, df_households, df_products
-
-def build_full_df(df_transactions, df_households, df_products):
-    """Merge safely only if join keys exist on both sides."""
-    full = df_transactions.copy()
-
-    if not full.empty and not df_households.empty:
-        if "hshd_num" in full.columns and "hshd_num" in df_households.columns:
-            full = full.merge(df_households, on="hshd_num", how="left")
-        else:
-            st.warning("Household key 'hshd_num' missing in one of the tables; skipping households merge.")
-
-    if not full.empty and not df_products.empty:
-        if "product_num" in full.columns and "product_num" in df_products.columns:
-            full = full.merge(df_products, on="product_num", how="left")
-        else:
-            st.warning("Product key 'product_num' missing in one of the tables; skipping products merge.")
-
-    return full
-
-
-# =========================
-# HERO + LOGIN (always visible on app start)
-# =========================
-st.markdown("""
-<style>
-.block-container { padding-top: 0.8rem; }
-.hero-card, .login-card {
-  background: #0f1a42;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 16px;
-  box-shadow: 0 16px 40px rgba(0,0,0,.25);
-}
-.login-card { padding: 20px 18px; }
-.hero-card { position: relative; overflow: hidden; }
-.hero-header {
-  background: linear-gradient(135deg, #0b5fff 0%, #0a2a6a 100%);
-  color: #fff; padding: 14px 16px; font-weight: 800; font-size: 18px;
-}
-.hero-body { padding: 10px; background:#0b1437; }
-.hero-body img { width: 100%; border-radius: 12px; display:block; }
-.badge-live {
-  position:absolute; top:14px; right:14px; background:#ff2d55;
-  color:#fff; font-weight:700; font-size:12px; padding:6px 10px; border-radius:999px;
-  letter-spacing:.3px;
-}
-</style>
-""", unsafe_allow_html=True)
-
 left, right = st.columns([1, 2], vertical_alignment="center")
 
-# LEFT: Login/Signup panel (inline)
 with left:
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
-    st.subheader("🔐 Login to Continue")
+    st.subheader("💫 Login to Continue")
+    st.markdown(
+        "<div style='height:6px;border-radius:999px;background:linear-gradient(90deg,#7C3AED,#06B6D4,#22C55E);margin:6px 0 14px;'></div>",
+        unsafe_allow_html=True
+    )
     login_signup_inline()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# RIGHT: Hero animated dashboard image (LIVE)
 with right:
     hero_path = ASSETS_DIR / "hero_dashboard.gif"
     st.markdown('<div class="hero-card">', unsafe_allow_html=True)
@@ -235,83 +188,23 @@ with right:
     st.markdown('<div class="badge-live">LIVE</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-body">', unsafe_allow_html=True)
     if hero_path.exists():
-        # Optional: subtle refresh so GIF feels alive if replaced server-side
-        st.markdown("<meta http-equiv='refresh' content='12'>", unsafe_allow_html=True)
         st.image(str(hero_path), use_container_width=True)
     else:
-        st.info("Upload an animated image to assets/hero_dashboard.gif")
+        st.info("Upload your animated GIF to assets/hero_dashboard.gif")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
 
 # =========================
-# Main (only for authenticated users)
+# Dashboard Content
 # =========================
 if st.session_state.authenticated:
-    st.title("📂 Dataset Loader")
-
-    # Optional uploads – override repo data at runtime
-    uploaded_transactions = st.file_uploader("Upload Transactions (CSV)", type="csv")
-    uploaded_households = st.file_uploader("Upload Households (CSV)", type="csv")
-    uploaded_products = st.file_uploader("Upload Products (CSV)", type="csv")
-
-    # Load from repo first
-    df_transactions, df_households, df_products = load_local_data()
-
-    # Override with uploads if provided
-    if uploaded_transactions is not None:
-        df_transactions = pd.read_csv(uploaded_transactions)
-    if uploaded_households is not None:
-        df_households = pd.read_csv(uploaded_households)
-    if uploaded_products is not None:
-        df_products = pd.read_csv(uploaded_products)
-
-    # Button to reload repo files (UX nicety)
-    if st.button("📥 Load Latest Data from Repository"):
-        df_transactions, df_households, df_products = load_local_data()
-        st.success("Loaded data from local repository files.")
-
-    # Show samples
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.caption("Sample Transactions")
-        st.dataframe(df_transactions.head(5))
-    with col_b:
-        st.caption("Sample Households")
-        st.dataframe(df_households.head(5))
-    with col_c:
-        st.caption("Sample Products")
-        st.dataframe(df_products.head(5))
-
-    # Normalize cols used later
-    df_transactions, df_households, df_products = normalize_columns(df_transactions, df_households, df_products)
-
-    # Guard if data missing
-    if df_transactions.empty or df_households.empty or df_products.empty:
-        st.warning("Please ensure all three datasets (Transactions, Households, Products) exist (in /data or via upload).")
-        st.stop()
-
-    # Derive a date column
-    if {"YEAR", "WEEK_NUM"}.issubset(df_transactions.columns):
-        try:
-            df_transactions["date"] = pd.to_datetime(
-                df_transactions["YEAR"].astype(str) + df_transactions["WEEK_NUM"].astype(str) + "0",
-                format="%Y%U%w",
-                errors="coerce",
-            )
-        except Exception:
-            df_transactions["date"] = pd.NaT
-    elif "PURCHASE_" in df_transactions.columns:
-        df_transactions["date"] = pd.to_datetime(df_transactions["PURCHASE_"], errors="coerce")
-    else:
-        df_transactions["date"] = pd.NaT
-
-    # Build merged frame
-    full_df = build_full_df(df_transactions, df_households, df_products)
-
-    # =========================
-    # Dashboard
-    # =========================
     st.title("📊 Retail Customer Analytics Dashboard")
+    st.markdown("---")
+    st.success(f"Welcome, {st.session_state.username}! Your dashboard is ready.")
+    st.write("🎨 All your insights with a colorful touch — enjoy exploring your data!")
+
+
+
 
     # 1) Customer Engagement Over Time
     st.header("📈 Customer Engagement Over Time")
